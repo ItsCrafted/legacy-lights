@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PVP Legacy Solver</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; display: flex; justify-content: center; align-items: center; height: 100vh; flex-direction: column; }
+        .grid { display: grid; gap: 10px; margin: 40px auto; }
+        .cell { width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; font-size: 30px; cursor: pointer; border: 2px solid #000; }
+        .on { background-color: #00FFFF; } /* Electric Neon Blue */
+        .off { background-color: #333435; } /* Dark Grey */
+        .solution { background-color: lightgreen !important; }
+        .disabled { background-color: rgb(62, 68, 73); border: none; pointer-events: none; visibility: hidden; }
+        .hidden { display: none; }
+        body {
+    font-family: Arial, sans-serif;
+    text-align: center;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height:130vh;
+    flex-direction: column;
+    background: linear-gradient(135deg, #444, #222); /* Smooth gray gradient */
+    color: white;
+}
+
+.grid {
+    display: grid;
+    gap: 10px;
+    margin: 40px auto;
+    padding: 20px;
+    background: rgba(255, 255, 255, 0.1); /* Subtle transparency */
+    backdrop-filter: blur(10px);
+    border-radius: 10px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+}
+
+button {
+    font-size: 18px;
+    padding: 12px 24px;
+    margin: 10px;
+    border: none;
+    border-radius: 8px;
+    background: linear-gradient(45deg, #00ffff, #0077ff);
+    color: white;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s ease-in-out;
+    box-shadow: 0 4px 10px rgba(0, 255, 255, 0.5);
+}
+
+button:hover {
+    transform: scale(1.1);
+    background: linear-gradient(45deg, #0077ff, #00ffff);
+    box-shadow: 0 6px 15px rgba(0, 255, 255, 0.7);
+}
+
+button:active {
+    transform: scale(0.95);
+    box-shadow: 0 2px 5px rgba(0, 255, 255, 0.3);
+}
+
+    </style>
+</head>
+<body>
+
+    <h1>PVP Legacy Light Room Solver</h1>
+    <h2>Enter The Inital State Of The Light Room</h2>
+    <h3>(Bottom = Entrance, Top = Trial By Strength, Left = Light Door (Anaur), Right = Dark Room (Ithil)) </h3>
+    <div id="grid-container" class="grid"></div>
+    <div id="solution-container" class="grid hidden"></div>
+    <button onclick="solve(true)">Solve for Lights Off (Ithil Gem)</button>
+    <button onclick="solve(false)">Solve for Lights On (Anaur Gem)</button>
+    <button onclick="solveWithMiddleOn()">Solve for Trial By Strength</button>
+
+    <script>
+        const gridLayout = [
+            [0, 1, 0, 1, 0, 1, 0],
+            [1, 1, 1, 1, 1, 1, 1],
+            [0, 1, 1, 1, 1, 0, 0],
+            [1, 1, 1, 1, 1, 1, 1],
+            [0, 0, 1, 1, 1, 1, 0],
+            [1, 1, 1, 1, 1, 1, 1],
+            [0, 1, 0, 1, 0, 1, 0]
+        ];
+        
+        let grid = gridLayout.map(row => row.map(cell => (cell ? 0 : null)));
+        let solutionGrid = gridLayout.map(row => row.map(cell => 0));
+        
+        function renderGrid(containerId, gridData, clickHandler = null, hideDisabled = false) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = "";
+            container.style.gridTemplateColumns = `repeat(${gridLayout[0].length}, 60px)`;
+            gridData.forEach((row, x) => {
+                row.forEach((cell, y) => {
+                    const div = document.createElement("div");
+                    div.className = `cell ${cell === null ? "disabled" : cell ? "on" : "off"}`;
+                    if (hideDisabled && cell === null) div.style.visibility = "hidden";
+                    div.textContent = cell !== null ? cell : "";
+                    if (clickHandler && cell !== null) div.onclick = () => clickHandler(x, y);
+                    container.appendChild(div);
+                });
+            });
+        }
+
+        function toggleCell(x, y) {
+            if (grid[x][y] !== null) {
+                grid[x][y] ^= 1;
+                renderGrid("grid-container", grid, toggleCell);
+            }
+        }
+
+        function solve(lightsOff) {
+            const targetState = lightsOff ? 0 : 1;
+            solutionGrid = solveLights(grid, targetState);
+            switchToSolution();
+        }
+
+        function solveWithMiddleOn() {
+              const size = gridLayout.length;
+                const mid = Math.floor(size / 2);
+    
+              // Reset grid to all off
+              let targetGrid = grid.map(row => row.map(cell => (cell !== null ? 0 : null)));
+
+               // Solve the lights-out system
+               let b = grid.flat().map(cell => (cell !== null ? cell : 0));
+    
+                // Toggle the middle light in `b`
+               b[mid * size + mid] ^= 1;
+
+              // Solve the system with this new `b`
+               solutionGrid = solveLights(grid, 0, b);
+    
+              switchToSolution();
+        }
+
+
+        function switchToSolution() {
+            document.getElementById("grid-container").classList.add("hidden");
+            document.getElementById("solution-container").classList.remove("hidden");
+            renderGrid("solution-container", solutionGrid, null, true);
+        }
+
+        function solveLights(grid, targetState = 0) {
+            const size = gridLayout.length;
+            const A = Array.from({ length: size * size }, () => Array(size * size).fill(0));
+            const b = grid.flat().map(cell => (cell !== null ? cell ^ targetState : 0));
+    
+            function index(x, y) {
+                return x * size + y;
+            }
+    
+            for (let x = 0; x < size; x++) {
+                for (let y = 0; y < size; y++) {
+                    if (gridLayout[x][y] === 0) continue;
+                    let i = index(x, y);
+                    A[i][i] = 1;
+                    if (x > 0 && gridLayout[x - 1][y] === 1) A[i][index(x - 1, y)] = 1;
+                    if (x < size - 1 && gridLayout[x + 1][y] === 1) A[i][index(x + 1, y)] = 1;
+                    if (y > 0 && gridLayout[x][y - 1] === 1) A[i][index(x, y - 1)] = 1;
+                    if (y < size - 1 && gridLayout[x][y + 1] === 1) A[i][index(x, y + 1)] = 1;
+                }
+            }
+    
+            function mod2Solve(A, b) {
+                const size = A.length;
+                let x = Array(size).fill(0);
+                for (let i = 0; i < size; i++) {
+                    if (A[i][i] === 0) {
+                        for (let j = i + 1; j < size; j++) {
+                            if (A[j][i] === 1) {
+                                [A[i], A[j]] = [A[j], A[i]];
+                                [b[i], b[j]] = [b[j], b[i]];
+                                break;
+                            }
+                        }
+                    }
+                    for (let j = i + 1; j < size; j++) {
+                        if (A[j][i] === 1) {
+                            for (let k = i; k < size; k++) {
+                                A[j][k] ^= A[i][k];
+                            }
+                            b[j] ^= b[i];
+                        }
+                    }
+                }
+                for (let i = size - 1; i >= 0; i--) {
+                    let sum = b[i];
+                    for (let j = i + 1; j < size; j++) {
+                        sum ^= A[i][j] * x[j];
+                    }
+                    x[i] = sum;
+                }
+                return Array.from({ length: size }, (_, i) => x.slice(i * size, (i + 1) * size));
+            }
+    
+            return mod2Solve(A, b);
+        }
+    
+        renderGrid("grid-container", grid, toggleCell);
+    </script>
+</body>
+</html>
